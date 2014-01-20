@@ -1,0 +1,407 @@
+<html>
+<head>
+	<title>Интерфейс управления роботом</title>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+	<link rel="stylesheet" href="style.css" type="text/css" media="screen" />
+	<script type="text/javascript"  src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+	<script src="jqueryui.custom.js"></script>
+	<link type="text/css" href="jqueryui.custom.css" rel="stylesheet" />
+	<script>
+	$(document).ready(function(){		
+		$.ajax({
+		  type: 'POST',
+		  url: 'server.json',
+		  dataType:'json',
+		  success: sensors
+		}); 
+		// Первым делом посылаем запрос на сервер методом POST, где выкачиваем данные (настройки робота) в json.
+		// После выполнения запроса, вызывается функция sensors
+		function getjsondat(){
+			$.ajax({
+			  type: 'POST',
+			  url: 'serverdat.json',
+			  dataType:'json',
+			  success: Successdat
+			});
+		}
+		// getjsondat() - функция которая выполняет ajax запрос на сервер, и выкачивает данные с датчиков робота в формате json
+		// После выполнения запроса, вызывается функция Successdat
+		function Successdat(data, status){
+			$("#thermometer span").text(data.thermometerval);
+			$("#oil span").text(data.oilpressval);
+			$("#accum span").text(data.accumulatorval);
+			$("#speed span").text(data.speed);
+			$("#stream").attr('src',data.cameraval);
+		}
+		// в функции Successdat, мы принимаем значение объект data, который содержит преобразованные json данные
+		// Затем подставляем эти данные в span который в div с id=thermometer и.т.д. в data.thermometerval содержится значение датчика и.т.д.
+		function sensors(data){
+			if(data.engine.tf){
+				$('body').append('<div id="slider-vertical" style="height:40%;"></div><p id="aboutslider"><input type="text" id="amount" style="font-family: Lobster, \'Comic Sans MS\', cursive;border:0; color:#000; font-weight:bold; font-size:20px;width: 50px;" /><br><label for="amount">об/мин</label></p>');
+				slider(data.engine.turnsmax);
+			}
+			if(data.camera.tf){
+				$("body").append('<img id="stream" src="img.jpg">');
+				if(data.camera.control.tf){
+					$('body').append('<div id="slidercam" style="width:40%;"></div>');
+					camslider(data.camera.control.min, data.camera.control.max);
+				}
+			}
+			if(data.thermometer){
+				$("#sensors").append('<div id="thermometer"><span>-</span>C<sup>o</sup></div>');
+			}
+			if(data.oilpress){
+				$("#sensors").append('<div id="oil"><span>-</span>bar</div>');
+			}
+			if(data.accum){
+				$("#sensors").append('<div id="accum"><span>-</span>В</div>');
+			}
+			if(data.speed){
+				$("#sensors").append('<div id="speed"><span>-</span>КМ/ч</div>');
+			}
+			if(data.control.tf){
+				if(data.control.left){
+					$("#left").css("display","block");
+				}
+				if(data.control.forward){
+					$("#forward").css("display","block");
+				}
+				if(data.control.back){
+					$("#back").css("display","block");
+				}
+				if(data.control.right){
+					$("#right").css("display","block");
+				}
+			}
+		}
+		// В функции sensors принимаем данные (объект), с настройками робота, 
+		// в зависимости от принятых настроек добавляем на страницу элементы управления роботом
+		// например если в data.engine.tf будет true, тогда мы добавляем в интерфейс управление оборотами двигателя 
+		// и в slider() передаем максимальное значение оборотов, если false, то ничего
+		// if(data.engine.tf){
+		// 		$('body').append('бла бла');
+		// 		slider(data.engine.turnsmax);
+		// 	}
+		// И.Т.Д.
+		function startstop(answ){
+			$.ajax({
+				type: "POST",
+				url: "get.php",
+				dataType: "json",
+				data: {"switch":answ},
+			});
+		}
+		// Функция startstop изменяет значение switch, вкл/выкл двигателя
+		startstopvar = false; // изначально двигатель выключен
+		$("#switch").toggle( // toggle переключатель, один клик по кнопке div c id=switch, вызываем первую функцию, второй клик, вызываем вторую, третий, снова первую
+						function(){
+							$(this).css({"background":"url(stop.png)","background-size":"100% 100%"}); // изменяем у div c id=switch css свойства меняем картинку
+							startstop("start"); // вызываем функцию в параметре передаем start
+							startstopvar = true; // меняем переменную на true ( двиг. запущен)
+							intervalget = setInterval(function() {
+								getjsondat();
+							}, 2000); // задаем интервал выполения функции getjsondat (получение данных с датчиков)
+						},
+						function(){ 
+							$(this).css({"background":"url(start.png)","background-size":"100% 100%"}); // аналогично
+							startstopvar = false; // аналогично
+							$("#slider-vertical").slider("value",0) // т.к двигатель выключаем, обороты в слайдере опускаем на 0
+							$("#amount").val(0); // т.к двигатель выключаем, обороты в слайдере опускаем на 0
+							clearInterval(intervalget); // очищаем интервал (перестаем опрашивать датчики)
+							startstop("stop"); // вызываем функцию в параметре передаем stop
+						}
+					);	
+		var anglef = 0;	// обороты двигателя поворота колес 	
+		function senddirect(direction,angle){ // функция которая будет отправлять на сервер данные о нажатой кнопке и угле поворота
+		turns = $("#slider-vertical").slider("value"); // берем установленное значение оборотов на слайдере в переменную turns
+		anglecam = $("#slidercam").slider("value"); // берем установленное значение угла поворота с камеры на слайдере в переменную anglecam
+			if((startstopvar) && (turns!=0)){ // если двигатель заведен и обороты не=0
+				if((anglef>-900)&&(anglef<900)){ // если обороты поворота колес больше -900 и меньше 900 (ЗДЕСЬ надо было доработать и здесь должны были быть переменные из настроек робота, но я не смог. ПЕЧАЛЬ и похуй)
+					if(((direction=="forward") || (direction=="back"))&&(anglef!=0)){ // если направление вперед или назад и обороты двигателя поворота колес не=0
+						if(anglef>0){ // если угол больше 0
+							anglef -= angle; // тогда вычитаем принятое значение в angle (типа возвращаем колеса в прямое положение, если они повернуты, а мы едем вперед или назад)
+						}else{
+							anglef += angle; // иначе прибавляем (типа возвращаем колеса в прямое положение, если они повернуты, а мы едем вперед или назад)
+						}
+					}else{
+						if((direction=="left") || (direction=="right")){ // если мы едем налево или направо
+							anglef += angle; // тогда просто прибавляем принятое значение в параметр (ну там мы 100 или -100 отправляли в зависимости от стороны поворота) 
+						}else{
+							anglef = 0; // ну и иначе 0 равны обороты
+						}
+					}
+				}
+				$.ajax({
+					type: "POST",
+					url: "get.php",
+					dataType: "json",
+					data: {"turns":turns,"anglecam":anglecam,"direction":direction,"angle":anglef},
+				}); // собственно отправляем все эти данные на сервер в файл get.php(где их примут и это не наша забота). Отправляем в формате json методом POST. Как видите они придут в переменную data
+			}else{
+				if(turns==0){ // если обороты двигателя = 0, тогда ..., иначе двигатель не запущен
+					$("#offturns").fadeIn(500).fadeOut(500); // мигаем табличкой, что обороты = 0. Находит div с id=offturns и показывает её
+				}else{
+					$("#offdvig").fadeIn(500).fadeOut(500); // мигаем табличкой, что двигатель не запущен. Находит div с id=offdvig и показывает её
+				}
+			}
+		}
+		$("#left").mousedown(function(){
+			go = setInterval(function(){
+								senddirect("left",-100);
+							}, 1000); // событие mousedown на div с id=left, если нажата кнопка налево, тогда устанавливаем интервал вызова функции senddirect, в параметы передаем что налево поворачиваем, и обороты двигателя поворота -100
+		}).mouseup(function(){clearInterval(go);}); // очистка интевала
+		
+		$("#right").mousedown(function(){
+			go = setInterval(function(){
+								senddirect("right",100); // аналогично как и налево, только параметры другие
+							}, 1000);
+		}).mouseup(function(){clearInterval(go);});// очистка интевала
+		
+		$("#forward").mousedown(function(){
+			go = setInterval(function(){
+								senddirect("forward",100); // аналогично как и налево, только параметры другие
+							}, 1000);
+		}).mouseup(function(){clearInterval(go);});// очистка интевала
+		
+		$("#back").mousedown(function(){
+			go = setInterval(function(){
+								senddirect("back",100); // аналогично как и налево, только параметры другие
+							}, 1000);
+		}).mouseup(function(){clearInterval(go);});// очистка интевала
+		
+		fontSize(); // вызов функции
+		function fontSize() {
+		   var bodyHeight = $('html').height();
+			console.log(bodyHeight);	   
+		   fontSize = Math.floor(bodyHeight/13);
+		   $('#sensors').css({"font-size": fontSize+'px'}); 
+		} //функция которая ресайзит шрифт в зависимости какого размера окно изначально открыто
+		$(window).resize(function() {
+			var bodyHeight = $('html').height();  
+		    fontSize = Math.floor(bodyHeight/13);
+		    $('#sensors').css({"font-size": fontSize+'px'}); 
+		});
+		// функция которая ресайзит шрифт, в зависимости от размера окна
+	});
+	</script>
+	<!--НИже css стили, там цвета блоков всякие, размеры, расположение элементов на странице итд-->
+	<style>
+	.arrow_box {
+		top:40%;
+		left:40%;
+		position: relative;
+		background: #d50015;
+		border: 1px solid #ab0000;
+		width: 300px;
+		height: 47px;
+		text-align: center;
+		padding-top: 15px;
+		color: #fff;
+		font-size: 20px;
+		font-weight: bold;
+		margin-bottom:25px;
+		display:none;
+		z-index:999;
+	}
+	.arrow_box:after, .arrow_box:before {
+		top: 100%;
+		left: 50%;
+		border: solid transparent;
+		content: " ";
+		height: 0;
+		width: 0;
+		position: absolute;
+		pointer-events: none;
+	}
+	.arrow_box:after {
+		border-color: rgba(213, 0, 21, 0);
+		border-top-color: #d50015;
+		border-width: 30px;
+		margin-left: -30px;
+	}
+	.arrow_box:before {
+		border-color: rgba(171, 0, 0, 0);
+		border-top-color: #ab0000;
+		border-width: 33px;
+		margin-left: -33px;
+	}
+
+	html{
+		font-family: Lobster, 'Comic Sans MS', cursive;
+		margin:0;
+		padding:0;
+	}
+	body{
+		margin:0;
+		padding:0;
+		background-color:#fff;
+	}
+	@font-face{
+		font-family: Lobster;
+		src: url(Lobster.ttf);
+	}
+	.button{
+		width:10%;
+		height:14%;
+		position: fixed;
+		background-size:100% 100%;
+		display:none;
+	}
+	#left{
+		background: url(button.png);
+		-moz-transform: rotate(180deg); /* Для Firefox */
+		-ms-transform: rotate(180deg); /* Для IE */
+		-webkit-transform: rotate(180deg); /* Для Safari, Chrome, iOS */
+		-o-transform: rotate(180deg); /* Для Opera */
+		transform: rotate(180deg);
+		background-size:100% 100%;
+		right: 24%;
+		bottom: 3%;
+	}
+	#left:active, #right:active{
+		background: url(buttonactiv.png);
+		background-size:100% 100%;
+	}
+	#back:active, #forward:active{
+		background: url(forwardactive.png);
+		background-size:100% 100%;
+	}
+	#back{
+		background: url(forward.png);
+		-moz-transform: rotate(180deg); /* Для Firefox */
+		-ms-transform: rotate(180deg); /* Для IE */
+		-webkit-transform: rotate(180deg); /* Для Safari, Chrome, iOS */
+		-o-transform: rotate(180deg); /* Для Opera */
+		transform: rotate(180deg);
+		background-size:100% 100%;
+		right: 13%;
+		bottom: 3%;
+	}
+	#forward{
+		background: url(forward.png);
+		background-size:100% 100%;
+		right: 13%;
+		bottom: 20%;
+	}
+	#right{
+		background: url(button.png);
+		right: 2%;
+		bottom: 3%;
+		background-size:100% 100%;
+	}
+	#slider-vertical{
+		position: fixed;
+		left: 2%;
+		bottom: 3%;
+	}
+	#aboutslider{
+		position: fixed;
+		left: 7%;
+		bottom: 0;
+	}
+	#slidercam{
+		position: fixed;
+		right: 2%;
+		top: 3%;
+		z-index: 999;
+	}
+	#aboutslidercam{
+		position: fixed;
+		right: 2%;
+		top: 5%;
+		z-index: 999;
+	}
+	#switch{
+		background: url(start.png);
+		position: fixed;
+		left: 17%;
+		bottom: 3%;
+		background-size:100% 100%;
+		display:block;
+	}
+	#stream{
+		position: fixed;
+		top: 3%;
+		right: 3%;
+		height: 60%;
+	}
+	#sensors{
+		position: fixed;
+		top: 3%;
+		left: 3%;
+		height: 50%;
+		width: 40%;
+	}
+	#sensors div{
+	font-size: 30px;
+		margin-bottom: 10px;
+		height: 20%;
+		padding-left: 100px;
+		border-bottom: 1px dashed #ccc;
+		width: 25%;
+		float: left;
+	}
+	#thermometer{
+		background: url(thermometer.png);
+		background-size:auto 100%;
+		background-repeat:no-repeat;
+	}
+	#accum{
+		background: url(accum.png);
+		background-size:auto 100%;
+		background-repeat:no-repeat;
+	}
+	#oil{
+		background: url(oil.png);
+		background-size:auto 100%;
+		background-repeat:no-repeat;
+	}
+	#speed{
+		background: url(speed.png);
+		background-size:auto 100%;
+		background-repeat:no-repeat;
+	}
+	</style>
+	<!--Конец css. По хорошему надо было их в отдельный файл, ну да ладно, мне лень.-->
+</head>
+<body>
+<div id="offdvig" class="arrow_box">Двигатель не запущен!</div> <!-- Собственно скрытый блок, с сообщением, что двиг не запущен -->
+<div id="offturns" class="arrow_box">Обороты двигателя = 0!</div> <!-- аналогично -->
+<div id="switch" class="button"></div> <!-- Кнопка start/stop -->
+
+<div id="left" class="button"></div> <!-- Кнопка налево -->
+<div id="right" class="button"></div> <!-- аналогично -->
+<div id="forward" class="button"></div> <!-- аналогично -->
+<div id="back" class="button"></div> <!-- аналогично -->
+
+<div id="sensors"></div> <!-- div с датчиками, в него мы вставляем через divы c датчиками, в зависимости от того есть они или нет --> 
+
+<script>
+	function camslider(minangle, maxangle){ // это функция для слайдера поворота камеры принимаем максимальные и минимальные значения угла
+		$("#slidercam").slider({
+			  value:0,
+			  min: minangle,
+			  max: maxangle,
+			  step: 1,
+			  slide: function( event, ui ) {
+				$( "#amountcam" ).val( "$" + ui.value );
+			  }
+			});
+		$( "#amountcam" ).val( "$" + $( "#slidercam" ).slider( "value" ) );
+	}
+    function slider(maxobr){ // это функция для слайдера оборотов двигателя принимаем значение максимальных оборотов двигателя
+		$("#slider-vertical").slider({
+		  orientation: "vertical",
+		  range: "min",
+		  min: 0,
+		  max: maxobr,
+		  value: 0,
+		  slide: function( event, ui ) {
+			$( "#amount" ).val( ui.value );
+		  }
+		});
+		$("#amount").val($("#slider-vertical").slider("value"));
+	}
+</script>
+</body>
+</html>
